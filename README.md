@@ -32,9 +32,9 @@ movie-recommender/
 
 ## Installation
 
-git clone https://github.com/GautBlrn/movie-recommender.git
-cd movie-recommender
-pip install -r requirements.txt
+git clone https://github.com/GautBlrn/movie-recommender.git  
+cd movie-recommender  
+pip install -r requirements.txt  
 
 ---
 
@@ -62,7 +62,7 @@ Python, pandas, NumPy, scikit-learn, matplotlib, seaborn, Jupyter
 ---
 
 ## Author
-Gautier Blairon
-Master Data & AI
-gautier.blairon17@gmail.com
-https://gt-sec.com
+Gautier Blairon  
+Master Data & AI  
+gautier.blairon17@gmail.com  
+https://gt-sec.com  
