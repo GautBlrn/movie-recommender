@@ -1,3 +1,6 @@
+![Python](https://img.shields.io/badge/Python-3.10-blue)
+![PyPI](https://img.shields.io/badge/pytest-passing-brightgreen)
+
 # 🎬 Movie Recommender System
 
 A content-based movie recommendation system built with Python.  
