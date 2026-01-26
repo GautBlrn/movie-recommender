@@ -1,21 +1,21 @@
-from pathlib import Path
 import pandas as pd
 
 from src.data_loader import load_raw_data, initial_cleaning
-from src.preprocessing import split_genres, select_final_columns
+from src.preprocessing import fill_missing, split_genres, select_final_columns
 from src.features import build_feature_matrix
 from src.model import train_knn
 from src.recommender import recommend_titles
 
-DATA_PATH = Path("data/raw/movie_metadata.csv")
 
 def run_recommender():
-    df = load_raw_data(DATA_PATH)
+    df = load_raw_data("data/raw/movie_metadata.csv")
     df = initial_cleaning(df)
     df = split_genres(df)
     df = select_final_columns(df)
+    df = fill_missing(df)
 
     feature_matrix = build_feature_matrix(df)
+    feature_matrix = feature_matrix.fillna(0)
     model = train_knn(feature_matrix)
 
     movie = input("🎬 Dernier film vu ? ")
