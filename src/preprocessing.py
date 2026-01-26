@@ -10,6 +10,33 @@ def split_genres(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def fill_missing(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    # Categorical
+    df["content_rating"] = df["content_rating"].fillna("Not Rated")
+    df["language"] = df["language"].fillna("Unknown")
+    df["country"] = df["country"].fillna("Unknown")
+    df["color"] = df["color"].fillna("Color")
+    df["director_name"] = df["director_name"].fillna("Unknown")
+
+    for c in ["actor_1_name", "actor_2_name", "actor_3_name"]:
+        if c in df.columns:
+            df[c] = df[c].fillna("Unknown")
+
+    # Numeric
+    if "title_year" in df.columns:
+        df["title_year"] = df["title_year"].fillna(df["title_year"].median())
+
+    if "imdb_score" in df.columns:
+        df["imdb_score"] = df["imdb_score"].fillna(df["imdb_score"].median())
+
+    if "num_voted_users" in df.columns:
+        df["num_voted_users"] = df["num_voted_users"].fillna(0)
+
+    return df
+
+
 def select_final_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Keep only the columns relevant for modeling.
