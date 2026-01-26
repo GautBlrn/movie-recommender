@@ -48,7 +48,7 @@ pip install -r requirements.txt
 
 ## Run
 
-python src/main.py
+python -m src.main
 
 Then type a movie title when prompted.
 
