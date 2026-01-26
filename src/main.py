@@ -7,7 +7,7 @@ from src.features import build_feature_matrix
 from src.model import train_knn
 from src.recommender import recommend_titles
 
-DATA_PATH = Path("../data/raw/movie_metadata.csv")
+DATA_PATH = Path("data/raw/movie_metadata.csv")
 
 def run_recommender():
     df = load_raw_data(DATA_PATH)
@@ -29,4 +29,5 @@ def run_recommender():
 
 
 if __name__ == "__main__":
+
     run_recommender()
