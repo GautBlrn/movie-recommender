@@ -1,9 +1,9 @@
 # 🎬 Movie Recommender System
 
-Content-based movie recommendation system built with Python & scikit-learn.
+A content-based movie recommendation system built with Python.  
+This project demonstrates data preprocessing, feature engineering, and a K-Nearest Neighbors approach to recommend similar movies using movie metadata.
 
-This project demonstrates an end-to-end Data Science pipeline:
-data cleaning → feature engineering → KNN similarity → recommendations.
+It is a practical showcase of real-world Data Science and Machine Learning skills, with a reproducible pipeline and modular structure.
 
 ---
 
@@ -21,12 +21,17 @@ data cleaning → feature engineering → KNN similarity → recommendations.
 movie-recommender/
 - README.md
 - requirements.txt
+- .gitignore
 - notebooks/exploration.ipynb
-- src/preprocess.py
+- src/__init__.py
+- src/data_loader.py
 - src/features.py
+- src/main.py
 - src/model.py
-- src/recommend.py
-- data/sample_movies.csv
+- src/preprocessing.py
+- src/recommender.py
+- data/raw/movie_metadata.py
+- data/clean/movie_clean.py
 
 ---
 
@@ -40,7 +45,7 @@ pip install -r requirements.txt
 
 ## Run
 
-python src/recommend.py
+python src/main.py
 
 Then type a movie title when prompted.
 
