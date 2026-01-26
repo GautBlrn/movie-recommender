@@ -23,11 +23,13 @@ def encode_categorical(df: pd.DataFrame, col: str, prefix: str) -> pd.DataFrame:
 
 def scale_votes(df: pd.DataFrame) -> pd.DataFrame:
     scaler = MinMaxScaler()
-    scaled = pd.DataFrame(
-        scaler.fit_transform(df[['num_voted_users']]),
-        columns=['num_voted_users']
+    scaled = scaler.fit_transform(df[["num_voted_users"]])
+    out = pd.DataFrame(
+        scaled,
+        columns=['num_voted_users_scaled'],
+        index=df.index
     )
-    return pd.concat([df[['movie_title']], scaled], axis=1)
+    return pd.concat([df[['movie_title']], out], axis=1)
 
 
 def build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
