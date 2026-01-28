@@ -25,6 +25,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+*:Zone.Identifier
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -226,3 +227,8 @@ artifacts/
 *.zip
 *.bz2
 *.7z
+
+# Project-specific artifacts
+data/models/
+outputs/
+*.parquet

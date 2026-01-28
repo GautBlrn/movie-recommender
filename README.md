@@ -1,76 +1,91 @@
-![Python](https://img.shields.io/badge/Python-3.10-blue)
-![PyPI](https://img.shields.io/badge/pytest-passing-brightgreen)
+![Python](https://img.shields.io/badge/Python-3.12-blue)
 
-# 🎬 Movie Recommender System
+# Movie Recommender (IMDb)
 
-A content-based movie recommendation system built with Python.  
-This project demonstrates data preprocessing, feature engineering, and a K-Nearest Neighbors approach to recommend similar movies using movie metadata.
-
-It is a practical showcase of real-world Data Science and Machine Learning skills, with a reproducible pipeline and modular structure.
-
----
+Content-based recommender built from IMDb datasets (genres + people + numeric signals) using KNN cosine similarity and a configurable reranking step.
 
 ## Features
-- Data preprocessing & cleaning
-- Feature engineering (encoding + scaling)
-- KNN (cosine similarity)
-- Top-N movie recommendations
-- Modular Python architecture
 
----
+- Dataset builder from IMDb TSV dumps (title.basics, title.ratings, title.principals, name.basics)
+
+- Encodings:
+
+    - Genres (multi-hot)
+
+    - People (TF-IDF)
+
+    - Numeric features (scaled) + Bayesian rating + confidence
+
+    - Decade / rating bucket / runtime bucket (one-hot)
+
+- Retrieval: NearestNeighbors (cosine)
+
+- Rerank: score = weighted(similarity, rating, votes, year gap) via config.py
+
+## What it does
+- Builds a clean movie dataset from IMDb TSV dumps
+- Feature engineering:
+  - genres (multi-hot)
+  - people (TF-IDF)
+  - numeric (scaled) + bayesian rating + confidence
+  - decade / rating bucket / runtime bucket (one-hot)
+- NearestNeighbors (cosine) retrieval
+- Rerank policy controlled in `config.py` (no retrain needed)
 
 ## Project structure
-
-movie-recommender/
-- README.md
+- scripts/
+  - download_imdb.py
+  - make_dataset.py
+  - train.py
+  - predicts.py
+  - batch_predict.py
+- notebooks/
+- data/        (ignored)
+- config.py
 - requirements.txt
-- .gitignore
-- notebooks/exploration.ipynb
-- src/__init__.py
-- src/data_loader.py
-- src/features.py
-- src/main.py
-- src/model.py
-- src/preprocessing.py
-- src/recommender.py
-- data/raw/movie_metadata.py
-- data/clean/movie_clean.py
 
----
 
-## Installation
+## Setup
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 
-git clone https://github.com/GautBlrn/movie-recommender.git  
-cd movie-recommender  
-pip install -r requirements.txt  
+# 1) Download IMDb dumps
+python scripts/download_imdb.py --out data/raw/imdb
 
----
+# 2) Build dataset (parquet)
+python scripts/make_dataset.py \
+  --imdb_dir data/raw/imdb \
+  --out data/processed/movie_imdb.parquet \
+  --min_votes 200 \
+  --top_actors 3
 
-## Run
+# 3) Train model bundle
+python scripts/train.py
 
-python -m src.main
+# 4) Recommend by title
+python scripts/predicts.py --title "Inception" --k 10
+# Batch test multiple titles
+python scripts/batch_predict.py \
+  --titles "Inception" "The Godfather" "Parasite" "Alien" "Blade Runner" \
+  --k 10 \
+  --csv outputs/batch_results.csv
+```
 
-Then type a movie title when prompted.
+## Tuning
+### Requires retrain (training settings)
 
----
+    MIN_VOTES, TF-IDF params, SVD size, Bayesian params, n_neighbors
 
-## Tech stack
-Python, pandas, NumPy, scikit-learn, matplotlib, seaborn, Jupyter
+### No retrain (predict/rerank settings)
 
----
+    W_SIM, W_RATING, W_VOTES, W_YEAR, pool sizing, debug printing
 
-## Skills demonstrated
-- Data cleaning
-- Feature engineering
-- Machine learning (KNN similarity)
-- Recommendation systems
-- Clean modular code
-- Reproducible projects
+## Next step
 
----
+Add synopsis/plot text as an additional TF-IDF block to improve semantic relevance.
 
-## Author
-Gautier Blairon  
-Master Data & AI  
-gautier.blairon17@gmail.com  
-https://gt-sec.com  
+### Author
+
+Gautier Blairon

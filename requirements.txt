@@ -1,6 +1,10 @@
 pandas
 numpy
+scipy
+joblib
 scikit-learn
 matplotlib
 seaborn
-pytest
+requests
+tqdm
+pyarrow
