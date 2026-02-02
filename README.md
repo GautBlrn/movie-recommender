@@ -38,14 +38,23 @@ Content-based recommender built from IMDb datasets (genres + people + numeric si
 - Bayesian smoothing for noisy IMDb signals
 
 ## Project structure
-- scripts/
+- scripts/ 
+  - audit_dataset.py
+  - demo_reco.py
   - download_imdb.py
+  - eval.py
   - make_dataset.py
   - train.py
   - predict.py
-  - batch_predict.py
+  - sweep_weights.py
+- tests/
+  - conftest.py
+  - test_coherence.py
+  - test_feature_alignment.py
+  - test_genre_tokens.py
+  - test_predict_json.py
 - notebooks/
-- data/        (ignored)
+- data/
 - config.py
 - requirements.txt
 
