@@ -80,11 +80,6 @@ python scripts/train.py
 
 # 4) Recommend by title
 python scripts/predict.py --title "Inception" --k 10
-# Batch test multiple titles
-python scripts/batch_predict.py \
-  --titles "Inception" "The Godfather" "Parasite" "Alien" "Blade Runner" \
-  --k 10 \
-  --csv outputs/batch_results.csv
 ```
 
 ## Tuning
