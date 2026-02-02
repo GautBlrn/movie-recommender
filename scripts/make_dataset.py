@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import argparse
-from collections import defaultdict
+from collections import Counter, defaultdict
 import os
 from pathlib import Path
 from itertools import combinations
-
+import math
+import sys
 import pandas as pd
 from tqdm import tqdm
 
+# ---- load config ----
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+import config as cfg
+print("USING CONFIG:", cfg.__file__)
 
 NA = r"\N"
 BAD_GENRES = {"News", "Reality-TV", "Talk-Show"}
@@ -228,22 +234,231 @@ def build_people_columns(df: pd.DataFrame, people_by_title: dict, nconst_to_name
     return df
 
 
-def build_genre_tokens(genres_str: str) -> str:
+# Poids des genres simples
+GENRE_BASE_WEIGHT = {
+    "Drama": 0.4,
+    "Comedy": 0.6,
+    "Romance": 0.6,
+
+    "Action": 1.1,
+    "Thriller": 1.1,
+    "Crime": 1.1,
+
+    "Horror": 1.6,
+    "Sci-Fi": 1.3,
+
+    "Adventure": 1.0,
+    "Fantasy": 1.2,
+
+    "Animation": 1.6,
+    "Documentary": 1.3,
+    "War": 1.2,
+    "Western": 1.3,
+    "Film-Noir": 1.4,
+    "Sport": 1.5,
+}
+
+# ------------------------------------------
+# Helper : répétition pondérée
+# ------------------------------------------
+def _repeat_token(
+    token: str,
+    weight: float,
+    scale: int,
+    min_rep: int = 1,
+    max_rep: int = 3,
+) -> list[str]:
+    reps = int(round(weight * scale))
+    reps = max(min_rep, min(max_rep, reps))
+    return [token] * reps
+
+# ------------------------------------------
+# build_genre_tokens (pure, config-driven)
+# ------------------------------------------
+def build_genre_tokens(
+    genres_str: str,
+    *,
+    runtime_min: int | None = None,
+    rating: float | None = None,
+    year: int | None = None,
+    pair_df: dict[str, int] | None = None,
+    triple_df: dict[str, int] | None = None,
+) -> str:
     """
-    Create richer genre features:
-      - single tokens: g:Action
-      - pair tokens: gpair:Action|Sci-Fi
+    Create *richer* genre tokens with:
+      - pairs:    gpair:A|B
+      - triples: gtriple:A|B|C
+      - ambience / subgenre tokens
+    Does NOT include solo tokens g:Genre — that info is in `genres` multi-hot.
+    All thresholds & weights come from config.py.
     """
+
     if not genres_str:
         return ""
+
     parts = [g for g in genres_str.replace(",", " ").split() if g and g not in BAD_GENRES]
     parts = sorted(set(parts))
-    if not parts:
+    if len(parts) < 1:
         return ""
 
-    singles = [f"g:{g}" for g in parts]
-    pairs = [f"gpair:{a}|{b}" for a, b in combinations(parts, 2)]
-    return " ".join(singles + pairs)
+    tokens: list[str] = []
+
+    # -------------------------
+    # Pairs (config-driven)
+    # -------------------------
+    for a, b in combinations(parts, 2):
+        pair = f"{a}|{b}"
+
+        # DF thresholds (si on a pair_df)
+        dfp = pair_df.get(pair, 0) if pair_df else 0
+
+        # Filtre DF trop faible / trop fréquent
+        if pair_df:
+            if dfp < cfg.GENRE_PAIR_MIN_DF:
+                continue
+
+            max_ratio = getattr(cfg, "GENRE_PAIR_MAX_DF_RATIO", None)
+            if max_ratio is not None:
+                n_docs = pair_df.get("_n_docs", 0) or 1
+                if (dfp / n_docs) > max_ratio:
+                    continue
+
+        # Pondération
+        w = 1.0
+        if a == "Drama" or b == "Drama":
+            w *= cfg.GENRE_PAIR_DRAMA_PENALTY
+        if a in ("Horror", "Animation") or b in ("Horror", "Animation"):
+            w *= cfg.GENRE_PAIR_FOCUS_BONUS
+
+        w = min(w, cfg.GENRE_PAIR_FOCUS_BONUS)  # clip
+        tokens.extend(
+            _repeat_token(
+                f"gpair:{pair}",
+                w,
+                cfg.GENRE_PAIR_SCALE,
+                min_rep=1,
+                max_rep=cfg.GENRE_PAIR_MAX_REP,
+            )
+        )
+
+    # -------------------------
+    # Triples (config-driven)
+    # -------------------------
+    if cfg.USE_GENRE_TRIPLES and triple_df is not None and len(parts) >= 3:
+        for a, b, c in combinations(parts, 3):
+            triple = f"{a}|{b}|{c}"
+
+            dft = triple_df.get(triple, 0)
+            # seuil flexible
+            min_df = cfg.GENRE_TRIPLE_MIN_DF
+            if "Horror" in (a, b, c) or "Animation" in (a, b, c):
+                min_df = cfg.GENRE_TRIPLE_MIN_DF_FOCUS
+
+            if dft < min_df:
+                continue
+
+            tokens.extend(
+                _repeat_token(
+                    f"gtriple:{triple}",
+                    1.2,
+                    cfg.GENRE_TRIPLE_SCALE,
+                    min_rep=1,
+                    max_rep=cfg.GENRE_TRIPLE_MAX_REP,
+                )
+            )
+
+    # -------------------------
+    # Ambience / subgenre tokens (config-driven)
+    # -------------------------
+    if cfg.USE_AMBIENCE_TOKENS:
+        s = set(parts)
+
+        # exemple de sous-genres utiles
+        # Horror
+        if "Horror" in s:
+            if {"Mystery", "Thriller"} & s:
+                tokens.append("horror:psych")
+            if "Action" in s:
+                tokens.append("horror:slasher")
+            if "Fantasy" in s:
+                tokens.append("horror:supernatural")
+            if "Comedy" in s:
+                tokens.append("horror:campy")
+            if runtime_min is not None and runtime_min >= 120:
+                tokens.append("horror:slowburn")
+            if "Crime" in s:
+                tokens.append("horror:brutal")
+
+        # Animation
+        if "Animation" in s:
+            if "Family" in s:
+                tokens.append("anim:family")
+            if {"Crime", "War", "Horror", "Thriller"} & s and "Family" not in s:
+                tokens.append("anim:adult")
+            if {"Music", "Musical"} & s:
+                tokens.append("anim:musical")
+            if {"Adventure", "Fantasy"} & s:
+                tokens.append("anim:adventure")
+            if runtime_min is not None and runtime_min < 70:
+                tokens.append("anim:short")
+
+        # ambiances transversales
+        if "Romance" in s and {"Drama", "Comedy"} & s:
+            tokens.append("mood:romantic")
+        if "War" in s and "Drama" in s:
+            tokens.append("mood:war_drama")
+        if "Adventure" in s and "Fantasy" in s:
+            tokens.append("mood:epic")
+
+        # pace
+        if runtime_min is not None:
+            if runtime_min <= cfg.PACE_FAST_RUNTIME_MAX and {"Action", "Thriller", "Horror"} & s:
+                tokens.append("pace:fast")
+            if runtime_min >= cfg.PACE_SLOW_RUNTIME_MIN and {"Drama", "History", "Documentary"} & s:
+                tokens.append("pace:slow")
+
+        # quality
+        if rating is not None:
+            if rating >= cfg.QUAL_HIGH_MIN:
+                tokens.append("qual:high")
+            elif rating <= cfg.QUAL_LOW_MAX:
+                tokens.append("qual:low")
+
+        # era
+        if year is not None and year > 0:
+            decade = (int(year) // 10) * 10
+            tokens.append(f"era:{decade}s")
+
+    return " ".join(tokens)
+
+
+def _parse_genre_parts(genres_str: str) -> list[str]:
+    if not genres_str:
+        return []
+    parts = [g for g in genres_str.replace(",", " ").split() if g and g not in BAD_GENRES]
+    return sorted(set(parts))
+
+
+def compute_pair_triple_df(genres_series: pd.Series) -> tuple[dict[str, int], dict[str, int]]:
+    """
+    DF = nombre de films contenant la paire/triple de genres (indépendamment des autres genres).
+    """
+    pair_counts = Counter()
+    triple_counts = Counter()
+
+    for s in genres_series.fillna("").astype(str):
+        parts = _parse_genre_parts(s)
+        if len(parts) < 2:
+            continue
+
+        for a, b in combinations(parts, 2):
+            pair_counts[f"{a}|{b}"] += 1
+
+        if len(parts) >= 3:
+            for a, b, c in combinations(parts, 3):
+                triple_counts[f"{a}|{b}|{c}"] += 1
+
+    return dict(pair_counts), dict(triple_counts)
 
 
 def build_content(df: pd.DataFrame) -> pd.DataFrame:
@@ -256,7 +471,23 @@ def build_content(df: pd.DataFrame) -> pd.DataFrame:
     df = df[df["genres"].ne("")].copy()
 
     # Build genre_tokens
-    df["genre_tokens"] = df["genres"].astype(str).apply(build_genre_tokens)
+    # --- compute DF maps for pairs/triples (data-driven) ---
+    pair_df, triple_df = compute_pair_triple_df(df["genres"].astype(str))
+    # injecter le nombre de docs pour les ratios :
+    pair_df["_n_docs"] = len(df)
+    triple_df["_n_docs"] = len(df)
+
+    df["genre_tokens"] = df.apply(
+        lambda r: build_genre_tokens(
+            r["genres"],
+            runtime_min=int(r["runtimeMinutes"]) if pd.notna(r["runtimeMinutes"]) else None,
+            rating=float(r["averageRating"]) if pd.notna(r.get("averageRating", None)) else None,
+            year=int(r["startYear"]) if pd.notna(r.get("startYear", None)) else None,
+            pair_df=pair_df,
+            triple_df=triple_df,
+        ),
+        axis=1,
+    )
 
     # Drop rows with no director (director is strong signal)
     df["directors"] = df["directors"].fillna("").astype(str).str.strip()

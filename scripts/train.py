@@ -14,14 +14,14 @@ from scipy import sparse
 from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.neighbors import NearestNeighbors
-from sklearn.preprocessing import MultiLabelBinarizer, StandardScaler
+from sklearn.preprocessing import MultiLabelBinarizer, StandardScaler, normalize
 
 
 # ---- load config ----
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-import config as cfg  # noqa: E402
-
+sys.path.insert(0, str(PROJECT_ROOT)) 
+import config as cfg
+print("USING CONFIG:", cfg.__file__)
 
 # -----------------------------
 # Helpers
@@ -50,10 +50,6 @@ def add_votes_per_year_bayes(
     tau_years: float = 3.0,
     current_year: int | None = None,
 ) -> tuple[pd.DataFrame, float]:
-    """
-    votes_per_year_bayes = (median(votes_per_year)*tau + votes) / (age_years + tau)
-    Using the median makes it robust to outliers.
-    """
     out = df.copy()
     if current_year is None:
         current_year = datetime.now().year
@@ -62,13 +58,16 @@ def add_votes_per_year_bayes(
     votes = pd.to_numeric(out.get("numVotes"), errors="coerce").fillna(0).astype(float)
 
     age = (current_year - year).clip(lower=0)
-    age = (age + 1).fillna(1).astype(float)  # avoid /0
-    out["age_years"] = age
-    out["votes_per_year"] = votes / out["age_years"]
+    age = (age + 1).fillna(1).astype(float)
 
-    mu_vpy = float(out["votes_per_year"].median()) if len(out) else 0.0
-    out["votes_per_year_bayes"] = (mu_vpy * tau_years + votes) / (out["age_years"] + tau_years)
+    # raw rate
+    vpy = votes / age
+    mu_vpy = float(vpy.median()) if len(out) else 0.0
+
+    # bayesian shrinkage on the rate
+    out["votes_per_year_bayes"] = (mu_vpy * tau_years + votes) / (age + tau_years)
     return out, mu_vpy
+
 
 
 def fit_tfidf_block(
@@ -83,7 +82,7 @@ def fit_tfidf_block(
     Fit TF-IDF on a text column and apply a scalar weight to the resulting matrix.
     """
     if col not in df.columns:
-        print(f"⚠️ Column '{col}' missing in dataset -> using empty strings (block becomes mostly zero).")
+        print(f"ATTENTION - Column '{col}' missing in dataset -> using empty strings (block becomes mostly zero).")
         text = pd.Series([""] * len(df))
     else:
         text = df[col].fillna("").astype(str)
@@ -92,7 +91,8 @@ def fit_tfidf_block(
         lowercase=False,
         min_df=min_df,
         max_features=max_features,
-        token_pattern=r"(?u)\b\w+\b",
+        token_pattern=r"(?u)\b[\w\-':\.\|]+\b",
+        dtype=np.float32
     )
     X = vec.fit_transform(text)
     if weight != 1.0:
@@ -151,7 +151,7 @@ def main() -> None:
     t0 = time.time()
     mlb = MultiLabelBinarizer(sparse_output=True)
     X_genres = mlb.fit_transform(split_genres(df["genres"]))
-    print(f"  → genres shape {X_genres.shape} in {time.time() - t0:.1f}s")
+    print(f"  → genres shape {X_genres.shape} in {time.time() - t0:.4f}s")
 
     # --- TF-IDF blocks (Section 6)
     # Weights (your conclusions)
@@ -165,29 +165,38 @@ def main() -> None:
         X_genres = X_genres * W_GENRES
 
     # Default TF-IDF caps (can be overridden in config.py if you add them)
-    MAXF = int(getattr(cfg, "MAX_FEATURES_TEXT", 50_000))
     MINDF = int(getattr(cfg, "MIN_DF_TEXT", 2))
-    MAXF_GENRE_TOKENS = int(getattr(cfg, "MAX_FEATURES_GENRE_TOKENS", 5_000))
+
+    MINDF_DIR = int(getattr(cfg, "MIN_DF_DIRECTORS", MINDF))
+    MINDF_WRI = int(getattr(cfg, "MIN_DF_WRITERS", MINDF))
+    MINDF_ACT = int(getattr(cfg, "MIN_DF_ACTORS", MINDF))
+    MINDF_GTK = int(getattr(cfg, "MIN_DF_GENRE_TOKENS", 2))
+
+    MAXF_DIR = int(getattr(cfg, "MAX_FEATURES_DIRECTORS", getattr(cfg, "MAX_FEATURES_TEXT", 50_000)))
+    MAXF_WRI = int(getattr(cfg, "MAX_FEATURES_WRITERS", getattr(cfg, "MAX_FEATURES_TEXT", 50_000)))
+    MAXF_ACT = int(getattr(cfg, "MAX_FEATURES_ACTORS", getattr(cfg, "MAX_FEATURES_TEXT", 50_000)))
+    MAXF_GENRE_TOKENS = int(getattr(cfg, "MAX_FEATURES_GENRE_TOKENS", 7_500))
+
 
     print("\n🔹 Encoding TF-IDF blocks...")
     t0 = time.time()
 
     tfidf_directors, X_directors = fit_tfidf_block(
-        df, "directors", min_df=MINDF, max_features=MAXF, weight=W_DIRECTORS
+        df, "directors", min_df=MINDF_DIR, max_features=MAXF_DIR, weight=W_DIRECTORS
     )
-    tfidf_writers, X_writers = fit_tfidf_block(
-        df, "writers", min_df=MINDF, max_features=MAXF, weight=W_WRITERS
+    tfidf_writers,   X_writers   = fit_tfidf_block(
+        df, "writers",   min_df=MINDF_WRI, max_features=MAXF_WRI, weight=W_WRITERS
     )
-    tfidf_actors, X_actors = fit_tfidf_block(
-        df, "actors", min_df=MINDF, max_features=MAXF, weight=W_ACTORS
+    tfidf_actors,    X_actors    = fit_tfidf_block(
+        df, "actors",    min_df=MINDF_ACT, max_features=MAXF_ACT, weight=W_ACTORS
     )
     tfidf_genre_tokens, X_genre_tokens = fit_tfidf_block(
-        df, "genre_tokens", min_df=1, max_features=MAXF_GENRE_TOKENS, weight=W_GENRE_TOKENS
+        df, "genre_tokens", min_df=MINDF_GTK, max_features=MAXF_GENRE_TOKENS, weight=W_GENRE_TOKENS
     )
 
     print(
         "  → blocks done in "
-        f"{time.time() - t0:.1f}s | "
+        f"{time.time() - t0:.4f}s | "
         f"directors={X_directors.shape} writers={X_writers.shape} actors={X_actors.shape} genre_tokens={X_genre_tokens.shape}"
     )
 
@@ -196,7 +205,6 @@ def main() -> None:
     num_cols = [
         "startYear",
         "runtimeMinutes",
-        "averageRating",
         "numVotes",
         "rating_bayes",
         "confidence",
@@ -217,7 +225,7 @@ def main() -> None:
         scaler = StandardScaler()
         arr = scaler.fit_transform(num_df.fillna(0).to_numpy(dtype=np.float32))
         X_num = sparse.csr_matrix(arr)
-        print(f"  → numeric shape {X_num.shape} in {time.time() - t0:.1f}s")
+        print(f"  → numeric shape {X_num.shape} in {time.time() - t0:.4f}s")
     else:
         print("  → numeric disabled")
 
@@ -229,23 +237,31 @@ def main() -> None:
     df["decade"] = (pd.to_numeric(df["startYear"], errors="coerce").fillna(0).astype(int) // 10) * 10
     decade_cols, X_decade = one_hot_dummies_fixed(df, "decade", "decade")
 
-    # rating bucket
+    # rating bucket (config-driven)
+    rating_bins = list(getattr(cfg, "RATING_BUCKET_BINS", [0, 6.0, 7.5, 10.0]))
+    rating_labels = list(getattr(cfg, "RATING_BUCKET_LABELS", ["low", "mid", "high"]))
+
     df["rating_bucket"] = pd.cut(
         pd.to_numeric(df["averageRating"], errors="coerce"),
-        bins=[0, 3, 6, 8, 10],
-        labels=["poor", "okay", "good", "great"],
+        bins=rating_bins,
+        labels=rating_labels,
+        include_lowest=True,
     )
     rating_cols, X_rating = one_hot_dummies_fixed(df, "rating_bucket", "rating")
 
-    # runtime bucket
+    # runtime bucket (config-driven)
+    runtime_bins = list(getattr(cfg, "RUNTIME_BUCKET_BINS", [0, 60, 400]))
+    runtime_labels = list(getattr(cfg, "RUNTIME_BUCKET_LABELS", ["short", "long"]))
+
     df["runtime_bucket"] = pd.cut(
         pd.to_numeric(df["runtimeMinutes"], errors="coerce"),
-        bins=[0, 30, 60, 90, 120, 180, 300, 10_000],
-        labels=["<30", "30-60", "60-90", "90-120", "120-180", "180-300", ">300"],
+        bins=runtime_bins,
+        labels=runtime_labels,
+        include_lowest=True,
     )
     runtime_cols, X_runtime = one_hot_dummies_fixed(df, "runtime_bucket", "runtime")
 
-    print(f"  → cat done in {time.time() - t0:.1f}s")
+    print(f"  → cat done in {time.time() - t0:.4f}s")
 
     # --- Combine all features (order matters!)
     print("\n🔹 Combining feature matrix...")
@@ -264,7 +280,7 @@ def main() -> None:
         ],
         format="csr",
     )
-    print(f"  → X shape {X.shape} in {time.time() - t0:.1f}s")
+    print(f"  → X shape {X.shape} in {time.time() - t0:.4f}s")
 
     # --- SVD
     svd = None
@@ -275,7 +291,8 @@ def main() -> None:
         t0 = time.time()
         svd = TruncatedSVD(n_components=n_svd, random_state=int(getattr(cfg, "RANDOM_STATE", 42)))
         X_final = svd.fit_transform(X)
-        print(f"  → SVD done in {time.time() - t0:.1f}s | shape {X_final.shape}")
+        X_final = normalize(X_final, norm="l2")
+        print(f"  → SVD done in {time.time() - t0:.4f}s | shape {X_final.shape}")
     else:
         print("\n🔹 SVD disabled")
 
@@ -284,7 +301,7 @@ def main() -> None:
     t0 = time.time()
     nn = NearestNeighbors(metric="cosine", n_neighbors=int(getattr(cfg, "N_NEIGHBORS", 50)))
     nn.fit(X_final)
-    print(f"  → NN done in {time.time() - t0:.1f}s")
+    print(f"  → NN done in {time.time() - t0:.4f}s")
 
     # --- Save bundle
     print("\n🔹 Saving model bundle...")
@@ -292,7 +309,9 @@ def main() -> None:
     model_dir.mkdir(parents=True, exist_ok=True)
 
     # Keep meta used by predicts + rerank
-    df_meta_cols = ["tconst", "primaryTitle", "startYear", "averageRating", "numVotes", "genres", "rating_bayes", "confidence"]
+    df_meta_cols = [
+        "tconst", "primaryTitle", "startYear", "averageRating", "numVotes", "genres", "rating_bayes", "confidence", "votes_per_year_bayes"
+        ]
     df_meta_cols = [c for c in df_meta_cols if c in df.columns]
     df_meta = df[df_meta_cols].copy()
 
@@ -344,6 +363,7 @@ def main() -> None:
             "rating_prior": rating_prior,
             "confidence_k": confidence_k,
             "votes_per_year_bayes_tau": tau_years,
+            "train_year" : datetime.now().year,
 
             "weights": {
                 "genres": W_GENRES,
@@ -355,7 +375,14 @@ def main() -> None:
 
             "tfidf": {
                 "min_df_text": MINDF,
-                "max_features_text": MAXF,
+                "min_df_directors": MINDF_DIR,
+                "min_df_writers": MINDF_WRI,
+                "min_df_actors": MINDF_ACT,
+                "min_df_genre_tokens": MINDF_GTK,
+
+                "max_features_directors": MAXF_DIR,
+                "max_features_writers": MAXF_WRI,
+                "max_features_actors": MAXF_ACT,
                 "max_features_genre_tokens": MAXF_GENRE_TOKENS,
             },
 
@@ -366,8 +393,8 @@ def main() -> None:
 
     out_path = PROJECT_ROOT / cfg.MODEL_BUNDLE_PATH
     joblib.dump(bundle, out_path)
-    print("✅ Bundle saved to:", out_path)
-    print("🚀 Training complete!")
+    print("Bundle saved to:", out_path)
+    print("Training complete!")
 
 
 if __name__ == "__main__":

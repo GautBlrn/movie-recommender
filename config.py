@@ -1,97 +1,130 @@
+# ==========================================================
 # Configuration for the movie recommender project
-# Edit these values to tune the pipeline without touching the code.
-
+# ==========================================================
 from pathlib import Path
 
 # ==========================================================
-# TRAINING SETTINGS (CHANGING ANYTHING HERE REQUIRES RETRAIN)
-# These values affect the dataset, the feature space, or the model itself.
-# If you change any of them: re-run make_dataset.py + train.py
+# PATHS
 # ==========================================================
-
-# -----------------------
-# Paths
-# -----------------------
 DATA_PATH = Path("data/processed/movie_imdb.parquet")
 MODEL_DIR = Path("data/models")
 MODEL_BUNDLE_PATH = MODEL_DIR / "recommender.joblib"
 
-# -----------------------
-# Dataset / filtering (apply in make_dataset.py or downstream as needed)
-# -----------------------
+# ==========================================================
+# DATASET FILTERING (make_dataset.py)
+# ==========================================================
 MIN_VOTES = 200
-MIN_RATING = 0.0  # set >0 if you decide to filter low-rated movies
+MIN_RATING = 0.0
 
-# -----------------------
-# TF-IDF blocks (directors / writers / actors / genre_tokens)
-# -----------------------
+# ==========================================================
+# TF-IDF / TEXT FEATURE SETTINGS (train.py)
+# ==========================================================
+# Global defaults
 MIN_DF_TEXT = 2
-MAX_FEATURES_TEXT = 50_000          # shared cap for directors/writers/actors
-MAX_FEATURES_GENRE_TOKENS = 5_000   # small vocab by design
+MAX_FEATURES_TEXT = 50_000
 
-# Block weights (from notebook conclusions)
-W_GENRES = 1.0
-W_GENRE_TOKENS = 0.8
-W_DIRECTORS = 2.0
-W_WRITERS = 1.3
-W_ACTORS = 0.6
+# Per-block min_df (controls noise)
+MIN_DF_DIRECTORS = 2
+MIN_DF_WRITERS = 2
+MIN_DF_ACTORS = 5
+MIN_DF_GENRE_TOKENS = 2
 
-# -----------------------
-# Encoding: numeric features
-# -----------------------
+# Per-block max_features (controls RAM + overfitting)
+MAX_FEATURES_DIRECTORS = 25_000
+MAX_FEATURES_WRITERS = 35_000
+MAX_FEATURES_ACTORS = 50_000
+MAX_FEATURES_GENRE_TOKENS = 7_500
+
+# Block weights (train-time: define NN feature space)
+W_GENRES = 1.80
+W_GENRE_TOKENS = 2.5
+W_DIRECTORS = 0.80
+W_WRITERS = 0.35
+W_ACTORS = 0.40
+
+# ==========================================================
+# GENRE TOKEN ENGINEERING (make_dataset.py)
+# ==========================================================
+USE_GENRE_TRIPLES = True
+USE_AMBIENCE_TOKENS = True
+
+# DF filtering (avoid useless / too generic tokens)
+GENRE_PAIR_MIN_DF = 10
+GENRE_PAIR_MAX_DF_RATIO = 0.40
+
+GENRE_TRIPLE_MIN_DF = 30
+GENRE_TRIPLE_MIN_DF_FOCUS = 20  # exception for focus genres
+
+# Weighting rules
+GENRE_PAIR_DRAMA_PENALTY = 0.60
+GENRE_PAIR_FOCUS_BONUS = 1.25
+
+# Repetition scales / caps (how strongly tokens repeat in the text field)
+GENRE_PAIR_SCALE = 2
+GENRE_TRIPLE_SCALE = 2
+GENRE_PAIR_MAX_REP = 4
+GENRE_TRIPLE_MAX_REP = 3
+
+FOCUS_GENRES = {"Horror", "Animation"}
+
+# ==========================================================
+# AMBIENCE / SUB-GENRE HEURISTICS (make_dataset.py)
+# ==========================================================
+PACE_FAST_RUNTIME_MAX = 105
+PACE_SLOW_RUNTIME_MIN = 140
+
+QUAL_HIGH_MIN = 7.5
+QUAL_LOW_MAX = 5.0
+
+# ==========================================================
+# NUMERIC + CATEGORICAL FEATURES (train.py + predict.py)
+# ==========================================================
 USE_NUMERIC = True
-LOG1P_VOTES = True  # recommended (numVotes is very skewed)
+LOG1P_VOTES = True
 
-# -----------------------
-# Dimensionality reduction
-# -----------------------
-SVD_COMPONENTS = 100  # 0 disables SVD
+# Rating buckets
+RATING_BUCKET_BINS = [0.0, 6.0, 7.5, 10.0]
+RATING_BUCKET_LABELS = ["low", "mid", "high"]
 
-# -----------------------
-# Nearest neighbors
-# -----------------------
-N_NEIGHBORS = 50  # predict pool should be <= this ideally
+# Runtime buckets
+RUNTIME_BUCKET_BINS = [0, 70, 400]
+RUNTIME_BUCKET_LABELS = ["short", "long"]
+
+# ==========================================================
+# MODELING (train.py)
+# ==========================================================
+SVD_COMPONENTS = 100
+N_NEIGHBORS = 200
 RANDOM_STATE = 42
 
-# -----------------------
-# Bayesian rating / confidence
-# -----------------------
+# ==========================================================
+# BAYESIAN SMOOTHING (train.py + predict.py)
+# ==========================================================
 RATING_PRIOR = 500
 CONFIDENCE_K = 500
-
-# -----------------------
-# Temporal popularity smoothing (Bayesian votes/year)
-# -----------------------
 VOTES_PER_YEAR_BAYES_TAU = 3.0
 
 # ==========================================================
-# PREDICT / RERANK SETTINGS (NO RETRAIN NEEDED)
-# These values only change the final ranking/printing in predicts.py.
-# You can tweak them and re-run predicts.py directly.
+# PREDICT / RERANK (predict.py only: no retrain)
 # ==========================================================
+# Candidate pool size used before rerank:
+# pool = max(PRED_POOL_MIN, k * PRED_POOL_MULT)
+PRED_POOL_MIN = 300
+PRED_POOL_MULT = 10
 
-# Candidate pool size for rerank
-PRED_POOL_MIN = 50
-PRED_POOL_MULT = 5  # pool = max(PRED_POOL_MIN, k * PRED_POOL_MULT)
+# Final score weights
+W_SIM = 0.64
+W_RATING = 0.15
+W_VOTES = -0.05
+W_YEAR = 0.08
 
-# Weights for final score (roughly sum to 1.0; doesn't have to be exact)
-# sim: cosine similarity (content)
-# rating: rating_bayes (or averageRating fallback)
-# votes: soft popularity prior (log-normalized)
-# year: proximity in release year (penalize big gaps)
-W_SIM = 0.59 # strong content similarity
-W_RATING = 0.15 # reward quality
-W_VOTES = -0.15 # penalize pure popularity
-W_YEAR = 0.03 # moderate temporal coherence
+# Bonus genre overlap
+W_GENRE_OVERLAP = 0.02
 
-# Votes normalization for votes component
-# votes_norm = log1p(votes) / log1p(VOTES_NORM_MAX)
+# Normalization / constraints for rerank
 VOTES_NORM_MAX = 2_500_000
+YEAR_GAP_MAX = 45
 
-# Year proximity scaling
-# year_score = max(0, 1 - abs(year - query_year) / YEAR_GAP_MAX)
-YEAR_GAP_MAX = 30
-
-# Debug printing: show score components for top results
-PRED_DEBUG = True
-PRED_DEBUG_TOPN = 10  # print components for top N
+# Debug
+PRED_DEBUG = False
+PRED_DEBUG_TOPN = 10

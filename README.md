@@ -1,4 +1,4 @@
-![Python](https://img.shields.io/badge/Python-3.12-blue)
+![Python](https://img.shields.io/badge/Python-3.10+-blue)
 
 # Movie Recommender (IMDb)
 
@@ -32,12 +32,17 @@ Content-based recommender built from IMDb datasets (genres + people + numeric si
 - NearestNeighbors (cosine) retrieval
 - Rerank policy controlled in `config.py` (no retrain needed)
 
+## Design choices
+- Content-based (cold-start friendly)
+- No deep learning (explainability, speed, reproducibility)
+- Bayesian smoothing for noisy IMDb signals
+
 ## Project structure
 - scripts/
   - download_imdb.py
   - make_dataset.py
   - train.py
-  - predicts.py
+  - predict.py
   - batch_predict.py
 - notebooks/
 - data/        (ignored)
@@ -65,7 +70,7 @@ python scripts/make_dataset.py \
 python scripts/train.py
 
 # 4) Recommend by title
-python scripts/predicts.py --title "Inception" --k 10
+python scripts/predict.py --title "Inception" --k 10
 # Batch test multiple titles
 python scripts/batch_predict.py \
   --titles "Inception" "The Godfather" "Parasite" "Alien" "Blade Runner" \
