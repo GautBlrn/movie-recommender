@@ -138,6 +138,7 @@ celerybeat.pid
 # Environments
 .env
 .envrc
+.venv/
 .venv
 env/
 venv/
@@ -210,10 +211,7 @@ __marimo__/
 # ===== ML / Data Science =====
 
 # Raw & generated data
-data/raw/
-data/external/
-data/interim/
-data/processed/
+data/
 
 # Models & artifacts
 models/
@@ -229,6 +227,5 @@ artifacts/
 *.7z
 
 # Project-specific artifacts
-data/models/
 outputs/
 *.parquet
